@@ -1,7 +1,8 @@
 name: Run tweet bot
+
 on:
   schedule:
-    - cron: '0 */2.4 * * *'  # Runs every 2.4 hours (but adjust as needed)
+    - cron: '0 */2 * * *'  # Runs every 2 hours
   workflow_dispatch:  # Allows manual triggering from GitHub
 
 jobs:
@@ -10,17 +11,20 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: '3.8'
+
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install -r requirements.txt  # This works if requirements.txt is in the root
+
     - name: Run tweet bot
       env:
         CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
         CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
         ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
         ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
-      run: python GLRECS.py
+      run: python GLRECS-BOT/GLRECS.py  # Path to GLRECS.py inside GLRECS-BOT folder
