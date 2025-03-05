@@ -8,6 +8,7 @@ on:
 jobs:
   tweet:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -17,9 +18,13 @@ jobs:
       with:
         python-version: '3.8'
 
+    - name: Upgrade pip
+      run: |
+        python -m pip install --upgrade pip
+
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt  # This works if requirements.txt is in the root
+        pip install --no-cache-dir -r requirements.txt -v  # Verbose to get more error details
 
     - name: Run tweet bot
       env:
