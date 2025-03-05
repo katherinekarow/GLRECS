@@ -47,9 +47,7 @@ aiohttp
 aiohttp_socks
 aioitertools
 aiosignal
-alabaster
 altair
-anaconda-anon-usage
 argparse
 async-timeout
 boto3
