@@ -38,4 +38,5 @@ jobs:
           SERVICE_ACCOUNT_FILE: credentials.json
         run: python GLRECS-BOT/GLRECS.py 2>&1 | tee bot_output.log
 
-      - name: Print bot output\n        run: cat bot_output.log
+      - name: Print bot output\n        
+        run: cat bot_output.log
