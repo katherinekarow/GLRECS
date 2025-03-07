@@ -28,7 +28,7 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
-# Initialize Twitter API (Tweepy)
+# Initialize Tweepy (Twitter API)
 client_v2 = tweepy.Client(
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
@@ -44,7 +44,7 @@ api = tweepy.API(auth)
 local_base_folder = './GLRECS_temp'
 # Supported image formats
 supported_formats = ('.jpg', '.jpeg', '.png', '.gif')
-# Supported description file extensions
+# Supported description file extensions (added .doc and .docx)
 supported_text_extensions = ('.txt', '.rtf', '.doc', '.docx')
 
 # Miami timezone
@@ -84,7 +84,7 @@ def download_drive_folder(folder_id, local_folder):
     for f in files:
         file_name = f['name']
         destination = os.path.join(local_folder, file_name)
-        # For Google Docs, export as plain text
+        # If file is a Google Doc, export as plain text
         if f['mimeType'] == 'application/vnd.google-apps.document':
             request = drive_service.files().export_media(fileId=f['id'], mimeType='text/plain')
             with io.FileIO(destination, 'wb') as fh:
@@ -96,15 +96,15 @@ def download_drive_folder(folder_id, local_folder):
             download_file_from_drive(f['id'], destination)
     return local_folder
 
-# --- Tweeting Functions (Modified) ---
+# --- Tweeting Functions (Unchanged, except removal of tweeted_images tracking) ---
 
 def get_alt_text_from_description(file_path):
     """Reads the first two lines from a description file to create alt text and returns full text."""
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
-            alt_text = "".join(lines[:2]).strip()
-            full_text = "".join(lines).strip()
+            alt_text = "".join(lines[:2]).strip()  # Use first two lines as alt text
+            full_text = "".join(lines).strip()      # Full text for follow-up tweet
             return alt_text, full_text
     except Exception as e:
         print(f"Error reading description file {file_path}: {e}")
@@ -128,7 +128,7 @@ def tweet_images_from_folder(folder_path):
         print(f"No images or description file found in folder: {folder_path}")
         return False
 
-    # Shuffle images multiple times to maximize randomness
+    # Shuffle images multiple times for randomness
     for _ in range(3):
         random.shuffle(images)
     selected_image = images[0]
