@@ -20,7 +20,7 @@ ACCESS_KEY = os.getenv('ACCESS_KEY')
 ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
 # Google Drive configuration
-DRIVE_FOLDER_ID = os.getenv('1Aj6tq5f0emeDVfEfuRsfXaT-YjTAFA1i')  # e.g., "1Aj6tq5f0emeDVfEfuRsfXaT-YjTAFA1i"
+DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')  # e.g., "1Aj6tq5f0emeDVfEfuRsfXaT-YjTAFA1i"
 SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')  # e.g., "./credentials.json"
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
