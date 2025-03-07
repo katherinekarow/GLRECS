@@ -1,9 +1,9 @@
-name: Run tweet bot
+name: Run Tweet Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Runs every 2 hours
-  workflow_dispatch:  # Allows manual triggering from GitHub
+    - cron: '0 */2 * * *'  # Every 2 hours; adjust as needed
+  workflow_dispatch:
 
 jobs:
   tweet:
@@ -19,17 +19,41 @@ jobs:
         python-version: '3.8'
 
     - name: Upgrade pip
-      run: |
-        python -m pip install --upgrade pip
+      run: python -m pip install --upgrade pip
 
     - name: Install dependencies
-      run: |
-        pip install --no-cache-dir -r requirements.txt -v  # Verbose to get more error details
+      run: pip install -r requirements.txt
 
-    - name: Run tweet bot
+    - name: Write Google Credentials File
+      run: echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > credentials.json
+
+    - name: Run tweet bot and capture output
+      id: run_bot
       env:
         CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
         CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
         ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
         ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
-      run: python GLRECS-BOT/GLRECS.py  # Path to GLRECS.py inside GLRECS-BOT folder
+        DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        SERVICE_ACCOUNT_FILE: credentials.json
+      run: python GLRECS-BOT/GLRECS.py 2>&1 | tee bot_output.log
+
+    - name: Capture output for email notification
+      id: read_log
+      run: | 
+        echo "log<<EOF" >> $GITHUB_OUTPUT
+        cat bot_output.log >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Send Email Notification
+      if: success()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: "Tweet Bot Run Successful"
+        body: ${{ steps.read_log.outputs.log }}
+        to: michylib@gmail.com
+        from: ${{ secrets.EMAIL_USERNAME }}
