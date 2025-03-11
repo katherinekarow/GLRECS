@@ -8,7 +8,7 @@ on:
 jobs:
   tweet:
     runs-on: ubuntu-latest
-    timeout-minutes: 3  # Stops the job if it runs longer than 3 minutes
+    timeout-minutes: 6 # Stops the job if it runs longer than 3 minutes
 
     steps:
       # Step 1: Checkout the code
