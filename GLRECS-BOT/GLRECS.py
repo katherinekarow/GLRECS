@@ -100,6 +100,29 @@ def download_file_from_drive(file_id, destination_path):
     except Exception as e:
         print(f"Error downloading file {file_id}: {e}")
 
+def download_drive_folder(folder_id, local_folder):
+    """
+    Downloads all files in the specified Drive folder to a local directory.
+    Returns the local folder path.
+    """
+    os.makedirs(local_folder, exist_ok=True)
+    files = list_drive_files(folder_id)
+    for f in files:
+        file_name = f['name']
+        destination = os.path.join(local_folder, file_name)
+        print(f"Downloading {file_name} to {destination}")
+        # If file is a Google Doc, export as plain text
+        if f['mimeType'] == 'application/vnd.google-apps.document':
+            request = drive_service.files().export_media(fileId=f['id'], mimeType='text/plain')
+            with io.FileIO(destination, 'wb') as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+        else:
+            download_file_from_drive(f['id'], destination)
+    return local_folder
+
 # --- Tweeting Functions ---
 
 def get_alt_text_from_description(file_path):
@@ -115,41 +138,6 @@ def get_alt_text_from_description(file_path):
         print(f"Error reading description file {file_path}: {e}")
         return None, None
 
-def select_and_download_files(files, local_folder):
-    """Randomly selects one image and one description file, and downloads them."""
-    images = []
-    description_file = None
-
-    # Randomly shuffle files to avoid always selecting the same files
-    random.shuffle(files)
-
-    for file in files:
-        file_name = file['name']
-        file_id = file['id']
-        lower = file_name.lower()
-
-        # Select image files
-        if lower.endswith(supported_formats):
-            images.append({'id': file_id, 'name': file_name})
-
-        # Select description files
-        elif lower.startswith('descrip') and lower.endswith(supported_text_extensions):
-            description_file = {'id': file_id, 'name': file_name}
-
-    # Check if both image and description file exist
-    if images and description_file:
-        selected_image = random.choice(images)  # Pick a random image from the list
-        print(f"Selected image: {selected_image['name']}")
-
-        # Download selected image and description file
-        download_file_from_drive(selected_image['id'], os.path.join(local_folder, selected_image['name']))
-        download_file_from_drive(description_file['id'], os.path.join(local_folder, description_file['name']))
-
-        return selected_image, description_file
-    else:
-        print("No valid image or description file found.")
-        return None, None
-
 def tweet_images_from_folder(folder_path):
     """Tweets a random image from the specified local folder if valid images and a description file exist."""
     images = []
@@ -158,18 +146,11 @@ def tweet_images_from_folder(folder_path):
     for item in os.listdir(folder_path):
         item_path = os.path.join(folder_path, item)
         if os.path.isfile(item_path):
-            lower = item.lower()  # Convert the filename to lowercase
-            print(f"Checking file: {item} (lowercase: {lower})")  # Debug print
-
-            # Check if the file is an image (check both lowercase extensions)
+            lower = item.lower()
             if lower.endswith(supported_formats):
                 images.append(item_path)
-                print(f"Added image: {item_path}")  # Debug print
-
-            # Check if the file is a description file
             elif lower.startswith('descrip') and lower.endswith(supported_text_extensions):
                 description_file = item_path
-                print(f"Found description file: {item_path}")  # Debug print
 
     if not images or not description_file:
         print(f"No images or description file found in folder: {folder_path}")
@@ -216,7 +197,7 @@ def tweet_images_from_folder(folder_path):
 def tweet_random_images():
     """
     Randomly selects a series folder from the Google Drive folder (GLRECS),
-    downloads only the necessary files (image and description), and tweets an image.
+    downloads its contents to a temporary local folder, and tweets an image.
     """
     if not DRIVE_FOLDER_ID:
         print("No DRIVE_FOLDER_ID provided.")
@@ -234,6 +215,7 @@ def tweet_random_images():
     for folder in drive_folders:
         print(f"Selected Drive folder: {folder['name']} (ID: {folder['id']})")
         local_folder = os.path.join(local_base_folder, folder['name'])
+        download_drive_folder(folder['id'], local_folder)
         success = tweet_images_from_folder(local_folder)
         if success:
             break
