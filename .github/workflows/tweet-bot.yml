@@ -2,37 +2,45 @@ name: Run Tweet Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Every 2 hours; adjust as needed
-  workflow_dispatch:
+    - cron: '0 */2 * * *'  # Runs every 2 hours
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   tweet:
     runs-on: ubuntu-latest
+    timeout-minutes: 3  # Stops the job if it runs longer than 3 minutes
 
     steps:
+      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.8'
 
+      # Step 3: Upgrade pip
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
+      # Step 4: Install dependencies
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Step 5: Write Google Credentials File
       - name: Write Google Credentials File
         run: |
           cat <<EOF > credentials.json
           ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           EOF
 
+      # Step 6: Verify credentials.json
       - name: Verify credentials.json
         run: cat credentials.json
 
+      # Step 7: Run the tweet bot and capture output
       - name: Run tweet bot and capture output
         id: run_bot
         env:
@@ -42,14 +50,19 @@ jobs:
           ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
           SERVICE_ACCOUNT_FILE: credentials.json
-        run: python GLRECS-BOT/GLRECS.py 2>&1 | tee bot_output.log
+        run: |
+          python GLRECS-BOT/GLRECS.py 2>&1 | tee bot_output.log
+          echo "Bot execution completed."
 
+      # Step 8: Print bot output
       - name: Print bot output
         run: cat bot_output.log
 
+      # Step 9: List files in directory (for debugging)
       - name: List files in directory
         run: ls -la
 
+      # Step 10: Upload bot output as an artifact
       - name: Upload bot output as artifact
         uses: actions/upload-artifact@v4
         with:
