@@ -152,20 +152,43 @@ def select_and_download_files(files, local_folder):
 
 def tweet_images_from_folder(folder_path):
     """Tweets a random image from the specified local folder if valid images and a description file exist."""
-    files = list_drive_files(DRIVE_FOLDER_ID)
-    selected_image, description_file = select_and_download_files(files, folder_path)
+    images = []
+    description_file = None
 
-    if not selected_image or not description_file:
+    for item in os.listdir(folder_path):
+        item_path = os.path.join(folder_path, item)
+        if os.path.isfile(item_path):
+            lower = item.lower()  # Convert the filename to lowercase
+            print(f"Checking file: {item} (lowercase: {lower})")  # Debug print
+
+            # Check if the file is an image (check both lowercase extensions)
+            if lower.endswith(supported_formats):
+                images.append(item_path)
+                print(f"Added image: {item_path}")  # Debug print
+
+            # Check if the file is a description file
+            elif lower.startswith('descrip') and lower.endswith(supported_text_extensions):
+                description_file = item_path
+                print(f"Found description file: {item_path}")  # Debug print
+
+    if not images or not description_file:
+        print(f"No images or description file found in folder: {folder_path}")
         return False
 
-    alt_text, full_text = get_alt_text_from_description(os.path.join(folder_path, description_file['name']))
+    # Shuffle images multiple times for randomness
+    for _ in range(3):
+        random.shuffle(images)
+    selected_image = images[0]
+    print(f"Selected image: {selected_image}")
+
+    alt_text, full_text = get_alt_text_from_description(description_file)
     if not alt_text or not full_text:
         print("No valid alt text or full text found.")
         return False
 
     media_ids = []
     try:
-        media = api.media_upload(os.path.join(folder_path, selected_image['name']))
+        media = api.media_upload(selected_image)
         api.create_media_metadata(media.media_id, alt_text)
         media_ids.append(media.media_id)
         print(f"Uploaded media with ID: {media.media_id}")
@@ -174,7 +197,7 @@ def tweet_images_from_folder(folder_path):
         sleep(6 * 60 * 60)
         return False
     except Exception as e:
-        print(f"Error uploading image {selected_image['name']}: {e}")
+        print(f"Error uploading image {selected_image}: {e}")
         return False
 
     if media_ids:
