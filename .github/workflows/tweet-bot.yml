@@ -25,7 +25,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Write Google Credentials File
-        run: echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > credentials.json
+        run: |
+          cat <<EOF > credentials.json
+          ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          EOF
+
+      - name: Verify credentials.json
+        run: cat credentials.json
 
       - name: Run tweet bot and capture output
         id: run_bot
@@ -45,7 +51,7 @@ jobs:
         run: ls -la
 
       - name: Upload bot output as artifact
-        uses: actions/upload-artifact@v4  # Updated to v4
+        uses: actions/upload-artifact@v4
         with:
           name: bot_output.log
           path: bot_output.log
