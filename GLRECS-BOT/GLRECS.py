@@ -64,7 +64,7 @@ except Exception as e:
 # Local temporary directory to download the Drive folder contents
 local_base_folder = './GLRECS_temp'
 # Supported image formats
-supported_formats = ('.jpg', '.jpeg', '.png', '.gif')
+supported_formats = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
 # Supported description file extensions (added .doc and .docx)
 supported_text_extensions = ('.txt', '.rtf', '.doc', '.docx')
 
