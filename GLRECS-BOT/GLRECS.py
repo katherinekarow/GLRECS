@@ -19,25 +19,46 @@ CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
+# Debug: Print environment variables
+print("Loaded environment variables:")
+print(f"CONSUMER_KEY: {CONSUMER_KEY}")
+print(f"CONSUMER_SECRET: {CONSUMER_SECRET}")
+print(f"ACCESS_KEY: {ACCESS_KEY}")
+print(f"ACCESS_SECRET: {ACCESS_SECRET}")
+
 # Google Drive configuration
 DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')  # e.g., "1Aj6tq5f0emeDVfEfuRsfXaT-YjTAFA1i"
 SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')  # e.g., "./credentials.json"
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
+# Debug: Print Google Drive configuration
+print(f"DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID}")
+print(f"SERVICE_ACCOUNT_FILE: {SERVICE_ACCOUNT_FILE}")
+
 # Initialize Google Drive service
-creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-drive_service = build('drive', 'v3', credentials=creds)
+try:
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    drive_service = build('drive', 'v3', credentials=creds)
+    print("Google Drive service initialized successfully.")
+except Exception as e:
+    print(f"Error initializing Google Drive service: {e}")
+    exit(1)
 
 # Initialize Tweepy (Twitter API)
-client_v2 = tweepy.Client(
-    consumer_key=CONSUMER_KEY,
-    consumer_secret=CONSUMER_SECRET,
-    access_token=ACCESS_KEY,
-    access_token_secret=ACCESS_SECRET
-)
-auth = tweepy.OAuth1UserHandler(CONSUMER_KEY, CONSUMER_SECRET)
-auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
-api = tweepy.API(auth)
+try:
+    client_v2 = tweepy.Client(
+        consumer_key=CONSUMER_KEY,
+        consumer_secret=CONSUMER_SECRET,
+        access_token=ACCESS_KEY,
+        access_token_secret=ACCESS_SECRET
+    )
+    auth = tweepy.OAuth1UserHandler(CONSUMER_KEY, CONSUMER_SECRET)
+    auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
+    api = tweepy.API(auth)
+    print("Twitter API initialized successfully.")
+except Exception as e:
+    print(f"Error initializing Twitter API: {e}")
+    exit(1)
 
 # --- Configuration ---
 # Local temporary directory to download the Drive folder contents
@@ -56,23 +77,28 @@ def list_drive_folders(parent_id):
     """Lists subfolders in the given Google Drive folder."""
     query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    print(f"Found {len(results.get('files', []))} folders in Drive.")
     return results.get('files', [])
 
 def list_drive_files(folder_id):
     """Lists files in a given Google Drive folder."""
     query = f"'{folder_id}' in parents and trashed=false"
     results = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+    print(f"Found {len(results.get('files', []))} files in folder {folder_id}.")
     return results.get('files', [])
 
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive to a local destination."""
-    request = drive_service.files().get_media(fileId=file_id)
-    with io.FileIO(destination_path, 'wb') as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-    print(f"Downloaded {destination_path}")
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        with io.FileIO(destination_path, 'wb') as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+        print(f"Downloaded {destination_path}")
+    except Exception as e:
+        print(f"Error downloading file {file_id}: {e}")
 
 def download_drive_folder(folder_id, local_folder):
     """
@@ -84,6 +110,7 @@ def download_drive_folder(folder_id, local_folder):
     for f in files:
         file_name = f['name']
         destination = os.path.join(local_folder, file_name)
+        print(f"Downloading {file_name} to {destination}")
         # If file is a Google Doc, export as plain text
         if f['mimeType'] == 'application/vnd.google-apps.document':
             request = drive_service.files().export_media(fileId=f['id'], mimeType='text/plain')
@@ -96,7 +123,7 @@ def download_drive_folder(folder_id, local_folder):
             download_file_from_drive(f['id'], destination)
     return local_folder
 
-# --- Tweeting Functions (Unchanged, except removal of tweeted_images tracking) ---
+# --- Tweeting Functions ---
 
 def get_alt_text_from_description(file_path):
     """Reads the first two lines from a description file to create alt text and returns full text."""
@@ -105,6 +132,7 @@ def get_alt_text_from_description(file_path):
             lines = file.readlines()
             alt_text = "".join(lines[:2]).strip()  # Use first two lines as alt text
             full_text = "".join(lines).strip()      # Full text for follow-up tweet
+            print(f"Read alt text: {alt_text}")
             return alt_text, full_text
     except Exception as e:
         print(f"Error reading description file {file_path}: {e}")
@@ -132,7 +160,8 @@ def tweet_images_from_folder(folder_path):
     for _ in range(3):
         random.shuffle(images)
     selected_image = images[0]
-    
+    print(f"Selected image: {selected_image}")
+
     alt_text, full_text = get_alt_text_from_description(description_file)
     if not alt_text or not full_text:
         print("No valid alt text or full text found.")
@@ -143,6 +172,7 @@ def tweet_images_from_folder(folder_path):
         media = api.media_upload(selected_image)
         api.create_media_metadata(media.media_id, alt_text)
         media_ids.append(media.media_id)
+        print(f"Uploaded media with ID: {media.media_id}")
     except tweepy.errors.TooManyRequests:
         print("Rate limit hit, sleeping for 4 hours...")
         sleep(6 * 60 * 60)
