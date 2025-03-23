@@ -1,4 +1,4 @@
-import os
+ import os
 import random
 import tweepy
 from time import sleep
@@ -27,13 +27,9 @@ print(f"ACCESS_KEY: {ACCESS_KEY}")
 print(f"ACCESS_SECRET: {ACCESS_SECRET}")
 
 # Google Drive configuration
-DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID') 
-SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE') 
+DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')
+SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
 SCOPES = ['https://www.googleapis.com/auth/drive']
-
-# Debug: Print Google Drive configuration
-print(f"DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID}")
-print(f"SERVICE_ACCOUNT_FILE: {SERVICE_ACCOUNT_FILE}")
 
 # Ensure the base temporary directory exists
 local_base_folder = './GLRECS_temp'
@@ -65,7 +61,7 @@ except Exception as e:
     exit(1)
 
 # --- Configuration ---
-# Comprehensive list of supported image formats
+# Comprehensive list of supported media formats
 supported_formats = (
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
     '.tiff', '.svg', '.heif', '.ico', '.raw', '.jfif',
@@ -115,7 +111,7 @@ def list_drive_files(folder_id):
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive to a local destination."""
     try:
-        # First, check the file metadata to determine its type
+        # Attempt to retrieve the file for download
         request = drive_service.files().get_media(fileId=file_id)
         with io.FileIO(destination_path, 'wb') as fh:
             downloader = MediaIoBaseDownload(fh, request)
