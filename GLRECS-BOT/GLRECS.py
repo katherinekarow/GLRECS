@@ -35,6 +35,10 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 print(f"DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID}")
 print(f"SERVICE_ACCOUNT_FILE: {SERVICE_ACCOUNT_FILE}")
 
+# Ensure the base temporary directory exists
+local_base_folder = './GLRECS_temp'
+os.makedirs(local_base_folder, exist_ok=True)
+
 # Initialize Google Drive service
 try:
     creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -61,8 +65,6 @@ except Exception as e:
     exit(1)
 
 # --- Configuration ---
-local_base_folder = './GLRECS_temp'
-
 # Comprehensive list of supported image formats
 supported_formats = (
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
