@@ -65,14 +65,12 @@ except Exception as e:
 supported_formats = (
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
     '.tiff', '.svg', '.heif', '.ico', '.raw', '.jfif',
-    '.exif', '.dng', '.mp4', '.avi', '.mov', '.wmv', '.mkv',
-    '.flv', '.webm', '.gifv', '.mp3', '.wav', '.aac', '.ogg'
-)
-
-# Comprehensive list of supported text file extensions
-supported_text_extensions = (
-    '.txt', '.rtf', '.doc', '.docx', '.pdf', '.odt',
-    '.markdown', '.csv', '.html', '.xml', '.json'
+    '.exif', '.dng', '.mp4', '.avi', '.mov', '.wmv', 
+    '.mkv', '.flv', '.webm', '.gifv', 
+    '.mp3', '.wav', '.aac', '.ogg',
+    '.txt', '.rtf', '.doc', '.docx', 
+    '.pdf', '.odt', '.markdown', 
+    '.csv', '.html', '.xml', '.json'
 )
 
 # Miami timezone
@@ -86,7 +84,7 @@ def list_drive_folders(parent_id):
     page_token = None
 
     while True:
-        query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        query = f"'{parent_id}' in parents and trashed=false"  # Removed mimeType filter
         results = drive_service.files().list(
             q=query,
             fields="files(id, name)",
@@ -97,8 +95,8 @@ def list_drive_folders(parent_id):
         page_token = results.get('nextPageToken', None)
 
         if page_token is None:
-            break  # No more pages
-
+            break  # Exit loop when there are no more pages
+    
     print(f"Found {len(folders)} folders in Drive.")
     return folders
 
@@ -111,7 +109,7 @@ def list_drive_files(folder_id):
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive to a local destination."""
     try:
-        # Attempt to retrieve the file for download
+        # Directly try to download the file
         request = drive_service.files().get_media(fileId=file_id)
         with io.FileIO(destination_path, 'wb') as fh:
             downloader = MediaIoBaseDownload(fh, request)
@@ -203,7 +201,7 @@ def tweet_random_images():
             file_name = f['name']
             lower = file_name.lower()
 
-            # Check file extensions directly
+            # Check if the file ends with any of the supported formats
             if any(lower.endswith(ext) for ext in supported_formats):
                 images.append(f)
             elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['desc'] for ext in supported_text_extensions):
