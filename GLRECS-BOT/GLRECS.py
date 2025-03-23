@@ -69,7 +69,8 @@ except Exception as e:
 supported_formats = (
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
     '.tiff', '.svg', '.heif', '.ico', '.raw', '.jfif',
-    '.exif', '.dng'
+    '.exif', '.dng', '.mp4', '.avi', '.mov', '.wmv', '.mkv',
+    '.flv', '.webm', '.gifv', '.mp3', '.wav', '.aac', '.ogg'
 )
 
 # Comprehensive list of supported text file extensions
@@ -84,21 +85,37 @@ miami_tz = pytz.timezone('America/New_York')
 # --- Google Drive Helper Functions ---
 
 def list_drive_folders(parent_id):
-    """Lists subfolders in the given Google Drive folder."""
-    query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-    print(f"Found {len(results.get('files', []))} folders in Drive.")
-    return results.get('files', [])
+    """Lists all subfolders in the given Google Drive folder using pagination."""
+    folders = []
+    page_token = None
+
+    while True:
+        query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = drive_service.files().list(
+            q=query,
+            fields="files(id, name)",
+            pageToken=page_token
+        ).execute()
+
+        folders.extend(results.get('files', []))
+        page_token = results.get('nextPageToken', None)
+
+        if page_token is None:
+            break  # No more pages
+
+    print(f"Found {len(folders)} folders in Drive.")
+    return folders
 
 def list_drive_files(folder_id):
     """Lists files in a given Google Drive folder."""
     query = f"'{folder_id}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
     return results.get('files', [])
 
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive to a local destination."""
     try:
+        # First, check the file metadata to determine its type
         request = drive_service.files().get_media(fileId=file_id)
         with io.FileIO(destination_path, 'wb') as fh:
             downloader = MediaIoBaseDownload(fh, request)
@@ -191,9 +208,9 @@ def tweet_random_images():
             lower = file_name.lower()
 
             # Check file extensions directly
-            if lower.endswith(supported_formats):
+            if any(lower.endswith(ext) for ext in supported_formats):
                 images.append(f)
-            elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['descrip'] for ext in supported_text_extensions):
+            elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['desc'] for ext in supported_text_extensions):
                 description_file = f
 
         # If both valid image and description are found
