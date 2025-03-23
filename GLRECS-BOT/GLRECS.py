@@ -19,7 +19,7 @@ CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
-# Print loaded environment variables for debugging
+# Debug: Print environment variables
 print("Loaded environment variables:")
 print(f"CONSUMER_KEY: {CONSUMER_KEY}")
 print(f"CONSUMER_SECRET: {CONSUMER_SECRET}")
@@ -91,7 +91,8 @@ def list_drive_folders(parent_id):
     page_token = None
 
     while True:
-        query = f"'{parent_id}' in parents and trashed=false"  # Removed mimeType filter
+        # *Removed the MIME type filter to ensure all folders are retrieved.*
+        query = f"'{parent_id}' in parents and trashed=false"  
         results = drive_service.files().list(
             q=query,
             fields="files(id, name)",
@@ -102,7 +103,7 @@ def list_drive_folders(parent_id):
         page_token = results.get('nextPageToken', None)
 
         if page_token is None:
-            break  # Exit loop when there are no more pages
+            break  # No more pages to process
     
     print(f"Found {len(folders)} folders in Drive.")
     return folders
@@ -134,7 +135,7 @@ def get_alt_text_from_description(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
-            alt_text = "".join(lines[:2]).strip()  # Use the first two lines as alt text
+            alt_text = "".join(lines[:2]).strip()  # Use first two lines as alt text
             full_text = "".join(lines).strip()      # Full text for follow-up tweet
             print(f"Read alt text: {alt_text}")
             return alt_text, full_text
@@ -208,7 +209,7 @@ def tweet_random_images():
             file_name = f['name']
             lower = file_name.lower()
 
-            # Store files that match the supported formats
+            # Check for supported file extensions
             if any(lower.endswith(ext) for ext in supported_formats):
                 images.append(f)
             elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['desc'] for ext in supported_text_extensions):
