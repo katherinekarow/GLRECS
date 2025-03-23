@@ -1,4 +1,4 @@
- import os
+import os
 import random
 import tweepy
 from time import sleep
