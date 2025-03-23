@@ -19,7 +19,7 @@ CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
-# Debug: Print environment variables
+# Print loaded environment variables for debugging
 print("Loaded environment variables:")
 print(f"CONSUMER_KEY: {CONSUMER_KEY}")
 print(f"CONSUMER_SECRET: {CONSUMER_SECRET}")
@@ -27,8 +27,8 @@ print(f"ACCESS_KEY: {ACCESS_KEY}")
 print(f"ACCESS_SECRET: {ACCESS_SECRET}")
 
 # Google Drive configuration
-DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')
-SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
+DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID') 
+SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE') 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # Ensure the base temporary directory exists
@@ -73,6 +73,13 @@ supported_formats = (
     '.csv', '.html', '.xml', '.json'
 )
 
+# Comprehensive list of supported text file extensions
+supported_text_extensions = (
+    '.txt', '.rtf', '.doc', '.docx', 
+    '.pdf', '.odt', '.markdown', 
+    '.csv', '.html', '.xml', '.json'
+)
+
 # Miami timezone
 miami_tz = pytz.timezone('America/New_York')
 
@@ -91,7 +98,7 @@ def list_drive_folders(parent_id):
             pageToken=page_token
         ).execute()
 
-        folders.extend(results.get('files', []))
+        folders.extend(results.get('files', []))  # Collecting all folders found
         page_token = results.get('nextPageToken', None)
 
         if page_token is None:
@@ -127,7 +134,7 @@ def get_alt_text_from_description(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
-            alt_text = "".join(lines[:2]).strip()  # Use first two lines as alt text
+            alt_text = "".join(lines[:2]).strip()  # Use the first two lines as alt text
             full_text = "".join(lines).strip()      # Full text for follow-up tweet
             print(f"Read alt text: {alt_text}")
             return alt_text, full_text
@@ -201,7 +208,7 @@ def tweet_random_images():
             file_name = f['name']
             lower = file_name.lower()
 
-            # Check if the file ends with any of the supported formats
+            # Store files that match the supported formats
             if any(lower.endswith(ext) for ext in supported_formats):
                 images.append(f)
             elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['desc'] for ext in supported_text_extensions):
