@@ -131,6 +131,21 @@ def download_drive_folder(folder_id, local_folder):
             download_file_from_drive(f['id'], destination)
     return local_folder
 
+def get_alt_text_from_description(description_file):
+    """Extracts the first sentence from a description file for alt text and returns the full text."""
+    try:
+        with open(description_file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                return "Sapphic Recommendation", "No description available."
+            
+            # Use the first 100 characters or first sentence as alt text
+            alt_text = content.split('.')[0] if '.' in content else content[:100]
+            return alt_text.strip(), content
+    except Exception as e:
+        print(f"Error reading description file {description_file}: {e}")
+        return "Sapphic Recommendation", "No description available."
+
 def tweet_images_from_folder(folder_path):
     """Tweets a random image from the specified folder."""
     images = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_formats)]
