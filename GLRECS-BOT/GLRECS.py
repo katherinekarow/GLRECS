@@ -27,13 +27,13 @@ print(f"ACCESS_KEY: {ACCESS_KEY}")
 print(f"ACCESS_SECRET: {ACCESS_SECRET}")
 
 # Google Drive configuration
-DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID') 
-SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE') 
+DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')
+SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-# Ensure the base temporary directory exists
-local_base_folder = './GLRECS_temp'
-os.makedirs(local_base_folder, exist_ok=True)
+# Debug: Print Google Drive configuration
+print(f"DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID}")
+print(f"SERVICE_ACCOUNT_FILE: {SERVICE_ACCOUNT_FILE}")
 
 # Initialize Google Drive service
 try:
@@ -60,178 +60,103 @@ except Exception as e:
     print(f"Error initializing Twitter API: {e}")
     exit(1)
 
-# --- Configuration ---
-# Comprehensive list of supported media formats
+# Configuration
+local_base_folder = './GLRECS_temp'
 supported_formats = (
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
     '.tiff', '.svg', '.heif', '.ico', '.raw', '.jfif',
-    '.exif', '.dng', '.mp4', '.avi', '.mov', '.wmv', 
-    '.mkv', '.flv', '.webm', '.gifv', 
-    '.mp3', '.wav', '.aac', '.ogg',
-    '.txt', '.rtf', '.doc', '.docx', 
-    '.pdf', '.odt', '.markdown', 
-    '.csv', '.html', '.xml', '.json'
+    '.exif', '.dng', '.weep', '.mp4', '.avi', '.mov', '.wmv',
+    '.mkv', '.flv', '.webm', '.gifv',
+    '.mp3', '.wav', '.aac', '.ogg'
 )
-
-# Comprehensive list of supported text file extensions
 supported_text_extensions = (
-    '.txt', '.rtf', '.doc', '.docx', 
-    '.pdf', '.odt', '.markdown', 
+    '.txt', '.rtf', '.doc', '.docx', '.pdf', '.odt', '.markdown',
     '.csv', '.html', '.xml', '.json'
 )
-
-# Miami timezone
 miami_tz = pytz.timezone('America/New_York')
 
-# --- Google Drive Helper Functions ---
-
 def list_drive_folders(parent_id):
-    """Lists all subfolders in the given Google Drive folder using pagination."""
-    folders = []
+    """Lists all subfolders in the given Google Drive folder."""
+    query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     page_token = None
-
+    folders = []
     while True:
-        # *Removed the MIME type filter to ensure all folders are retrieved.*
-        query = f"'{parent_id}' in parents and trashed=false"  
-        results = drive_service.files().list(
-            q=query,
-            fields="files(id, name)",
-            pageToken=page_token
-        ).execute()
-
-        folders.extend(results.get('files', []))  # Collecting all folders found
-        page_token = results.get('nextPageToken', None)
-
-        if page_token is None:
-            break  # No more pages to process
-    
+        results = drive_service.files().list(q=query, fields="files(id, name)", pageToken=page_token).execute()
+        folders.extend(results.get('files', []))
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
     print(f"Found {len(folders)} folders in Drive.")
     return folders
 
 def list_drive_files(folder_id):
-    """Lists files in a given Google Drive folder."""
+    """Lists all files in a given Google Drive folder."""
     query = f"'{folder_id}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-    return results.get('files', [])
+    files = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute().get('files', [])
+    return files
+
+def select_valid_drive_folder(folders):
+    """Selects a random folder that contains at least one image and one text file."""
+    random.shuffle(folders)
+    for folder in folders:
+        files = list_drive_files(folder['id'])
+        has_image = any(f['name'].lower().endswith(supported_formats) for f in files)
+        has_text = any(f['name'].lower().endswith(supported_text_extensions) for f in files)
+        if has_image and has_text:
+            print(f"Selected valid folder: {folder['name']}")
+            return folder
+    print("No valid folders found.")
+    return None
 
 def download_file_from_drive(file_id, destination_path):
-    """Downloads a file from Google Drive to a local destination."""
+    """Downloads a file from Google Drive."""
     try:
-        # Directly try to download the file
         request = drive_service.files().get_media(fileId=file_id)
         with io.FileIO(destination_path, 'wb') as fh:
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
-                status, done = downloader.next_chunk()
+                _, done = downloader.next_chunk()
         print(f"Downloaded {destination_path}")
     except Exception as e:
         print(f"Error downloading file {file_id}: {e}")
 
-# --- Tweeting Functions ---
+def download_drive_folder(folder_id, local_folder):
+    """Downloads only necessary files from a Drive folder to a local directory."""
+    os.makedirs(local_folder, exist_ok=True)
+    files = list_drive_files(folder_id)
+    for f in files:
+        if f['name'].lower().endswith(supported_formats + supported_text_extensions):
+            destination = os.path.join(local_folder, f['name'])
+            download_file_from_drive(f['id'], destination)
+    return local_folder
 
-def get_alt_text_from_description(file_path):
-    """Reads the first two lines from a description file to create alt text and returns full text."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-            alt_text = "".join(lines[:2]).strip()  # Use first two lines as alt text
-            full_text = "".join(lines).strip()      # Full text for follow-up tweet
-            print(f"Read alt text: {alt_text}")
-            return alt_text, full_text
-    except Exception as e:
-        print(f"Error reading description file {file_path}: {e}")
-        return None, None
-
-def tweet_images_from_folder(folder_path, selected_image, description_file):
-    """Tweets the selected image from the specified local folder along with the description."""
-    if not selected_image or not description_file:
-        print("Invalid image or description file.")
+def tweet_images_from_folder(folder_path):
+    """Tweets a random image from the specified folder."""
+    images = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_formats)]
+    descriptions = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_text_extensions)]
+    if not images or not descriptions:
+        print(f"No images or description file found in folder: {folder_path}")
         return False
-
-    alt_text, full_text = get_alt_text_from_description(description_file)
-    if not alt_text or not full_text:
-        print("No valid alt text or full text found.")
-        return False
-
-    media_ids = []
+    selected_image = random.choice(images)
+    alt_text, full_text = get_alt_text_from_description(descriptions[0])
     try:
         media = api.media_upload(selected_image)
         api.create_media_metadata(media.media_id, alt_text)
-        media_ids.append(media.media_id)
-        print(f"Uploaded media with ID: {media.media_id}")
-    except tweepy.errors.TooManyRequests:
-        print("Rate limit hit, sleeping for 4 hours...")
-        sleep(6 * 60 * 60)
-        return False
+        client_v2.create_tweet(text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊", media_ids=[media.media_id])
+        print(f"Tweeted {alt_text}")
     except Exception as e:
-        print(f"Error uploading image {selected_image}: {e}")
+        print(f"Error tweeting: {e}")
         return False
-
-    if media_ids:
-        try:
-            tweet_text = "₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊"
-            response = client_v2.create_tweet(text=tweet_text, media_ids=media_ids)
-            client_v2.create_tweet(text=full_text, in_reply_to_tweet_id=response.data['id'])
-            current_time = datetime.now(miami_tz).strftime('%Y-%m-%d %I:%M %p')
-            print(f"Rec Tweeted: {alt_text} at {current_time}")
-        except Exception as e:
-            print(f"Error tweeting text: {e}")
-            return False
-
     return True
 
 def tweet_random_images():
-    """
-    Randomly selects a series folder from the Google Drive folder (GLRECS),
-    checks for valid images and description files based on extensions,
-    and tweets if conditions are met.
-    """
-    if not DRIVE_FOLDER_ID:
-        print("No DRIVE_FOLDER_ID provided.")
-        return
-
-    drive_folders = list_drive_folders(DRIVE_FOLDER_ID)
-    if not drive_folders:
-        print("No eligible folders found on Google Drive.")
-        return
-
-    while True:
-        folder = random.choice(drive_folders)
-        print(f"Selected Drive folder: {folder['name']} (ID: {folder['id']})")
-        files = list_drive_files(folder['id'])
-
-        images = []
-        description_file = None
-
-        # Check for valid images and description files using extensions
-        for f in files:
-            file_name = f['name']
-            lower = file_name.lower()
-
-            # Check for supported file extensions
-            if any(lower.endswith(ext) for ext in supported_formats):
-                images.append(f)
-            elif any(lower.startswith(prefix) and lower.endswith(ext) for prefix in ['desc'] for ext in supported_text_extensions):
-                description_file = f
-
-        # If both valid image and description are found
-        if images and description_file:
-            print(f"Found {len(images)} images and 1 description file.")
-            selected_image_file = random.choice(images)
-            selected_image_path = os.path.join(local_base_folder, selected_image_file['name'])
-            
-            # Download only the selected image and description file
-            download_file_from_drive(selected_image_file['id'], selected_image_path)
-            description_path = os.path.join(local_base_folder, description_file['name'])
-            download_file_from_drive(description_file['id'], description_path)
-
-            # Now, tweet the image with the description
-            success = tweet_images_from_folder(local_base_folder, selected_image_path, description_path)
-            if success:
-                break
-        else:
-            print("No valid images or description file found. Retrying with another folder...")
+    """Selects a valid Drive folder and tweets an image."""
+    folders = list_drive_folders(DRIVE_FOLDER_ID)
+    valid_folder = select_valid_drive_folder(folders)
+    if valid_folder:
+        local_folder = download_drive_folder(valid_folder['id'], os.path.join(local_base_folder, valid_folder['name']))
+        tweet_images_from_folder(local_folder)
 
 def main():
     tweet_random_images()
