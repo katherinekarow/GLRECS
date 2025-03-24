@@ -206,7 +206,7 @@ def tweet_images_from_folder(folder_path):
     alt_text, full_text = get_alt_text_from_description(descriptions[0])
     try:
         media = api.media_upload(selected_image)
-        api.create_media_metadata(media.media_id, alt_text)
+        api.create_media_metadata(media.media_id, alt_text)  # Correct way to add alt text
         client_v2.create_tweet(text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊", media_ids=[media.media_id])
         print(f"Tweeted {alt_text}")
     except Exception as e:
