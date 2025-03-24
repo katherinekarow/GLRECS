@@ -78,20 +78,6 @@ miami_tz = pytz.timezone('America/New_York')
 def list_drive_folders(parent_id):
     """Lists all subfolders in the given Google Drive folder."""
     query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    page_token = None
-    folders = []
-    while True:
-        results = drive_service.files().list(q=query, fields="files(id, name)", pageToken=page_token).execute()
-        folders.extend(results.get('files', []))
-        page_token = results.get('nextPageToken')
-        if not page_token:
-            break
-    print(f"Found {len(folders)} folders in Drive.")
-    return folders
-
-def list_drive_folders(parent_id):
-    """Lists all subfolders in the given Google Drive folder."""
-    query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     folders = []
     page_token = None
 
@@ -112,6 +98,19 @@ def list_drive_folders(parent_id):
     print(f"Found {len(folders)} folders in Drive.")
     return folders
 
+def list_drive_files(folder_id):
+    """Lists all files in a given Google Drive folder."""
+    query = f"'{folder_id}' in parents and trashed=false"
+    files = []
+    page_token = None
+    while True:
+        results = drive_service.files().list(q=query, fields="files(id, name, mimeType)", pageToken=page_token).execute()
+        files.extend(results.get('files', []))
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
+    return files
+
 def select_valid_drive_folder(folders):
     """Selects a random folder that contains at least one image and one text file."""
     random.shuffle(folders)
@@ -124,6 +123,18 @@ def select_valid_drive_folder(folders):
             return folder
     print("No valid folders found.")
     return None
+
+def download_drive_folder(folder_id, destination_folder):
+    """Downloads all files in a Google Drive folder to a local folder."""
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+
+    files = list_drive_files(folder_id)
+    for file in files:
+        file_path = os.path.join(destination_folder, file['name'])
+        download_file_from_drive(file['id'], file_path)
+
+    return destination_folder
 
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive, exporting Google Docs files if necessary."""
@@ -168,7 +179,6 @@ def download_file_from_drive(file_id, destination_path):
 
     except Exception as e:
         print(f"Error downloading file {file_id} ({file_name}): {e}")
-
 
 def get_alt_text_from_description(description_file):
     """Extracts the first sentence from a description file for alt text and returns the full text."""
