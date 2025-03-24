@@ -89,11 +89,28 @@ def list_drive_folders(parent_id):
     print(f"Found {len(folders)} folders in Drive.")
     return folders
 
-def list_drive_files(folder_id):
-    """Lists all files in a given Google Drive folder."""
-    query = f"'{folder_id}' in parents and trashed=false"
-    files = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute().get('files', [])
-    return files
+def list_drive_folders(parent_id):
+    """Lists all subfolders in the given Google Drive folder."""
+    query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    folders = []
+    page_token = None
+
+    while True:
+        results = drive_service.files().list(
+            q=query,
+            fields="nextPageToken, files(id, name)",
+            pageSize=500,  # Increase page size to retrieve more results per request
+            pageToken=page_token
+        ).execute()
+
+        folders.extend(results.get('files', []))
+        page_token = results.get('nextPageToken')
+
+        if not page_token:
+            break  # Exit loop when there are no more pages
+
+    print(f"Found {len(folders)} folders in Drive.")
+    return folders
 
 def select_valid_drive_folder(folders):
     """Selects a random folder that contains at least one image and one text file."""
