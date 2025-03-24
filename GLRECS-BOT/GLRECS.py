@@ -109,27 +109,49 @@ def select_valid_drive_folder(folders):
     return None
 
 def download_file_from_drive(file_id, destination_path):
-    """Downloads a file from Google Drive."""
+    """Downloads a file from Google Drive, exporting Google Docs files if necessary."""
     try:
-        request = drive_service.files().get_media(fileId=file_id)
+        file_metadata = drive_service.files().get(fileId=file_id, fields="mimeType, name").execute()
+        file_mime_type = file_metadata.get('mimeType', '')
+        file_name = file_metadata.get('name', '')
+
+        # Define export formats for Google Docs types
+        export_mime_types = {
+            'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # Export to .docx
+            'application/vnd.google-apps.spreadsheet': 'text/csv',  # Export to .csv
+            'application/vnd.google-apps.presentation': 'application/pdf',  # Export to .pdf
+            'application/vnd.google-apps.drawing': 'image/png'  # Export to .png
+        }
+
+        if file_mime_type in export_mime_types:
+            export_mime = export_mime_types[file_mime_type]
+            request = drive_service.files().export_media(fileId=file_id, mimeType=export_mime)
+
+            # Assign correct file extension based on export format
+            extension_map = {
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+                'text/csv': '.csv',
+                'application/pdf': '.pdf',
+                'image/png': '.png'
+            }
+            file_extension = extension_map.get(export_mime, '.txt')  # Default to .txt if unknown
+            destination_path = os.path.splitext(destination_path)[0] + file_extension
+
+        else:
+            # Normal file download (for .rtf, .txt, .doc, .docx)
+            request = drive_service.files().get_media(fileId=file_id)
+
         with io.FileIO(destination_path, 'wb') as fh:
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
-        print(f"Downloaded {destination_path}")
-    except Exception as e:
-        print(f"Error downloading file {file_id}: {e}")
 
-def download_drive_folder(folder_id, local_folder):
-    """Downloads only necessary files from a Drive folder to a local directory."""
-    os.makedirs(local_folder, exist_ok=True)
-    files = list_drive_files(folder_id)
-    for f in files:
-        if f['name'].lower().endswith(supported_formats + supported_text_extensions):
-            destination = os.path.join(local_folder, f['name'])
-            download_file_from_drive(f['id'], destination)
-    return local_folder
+        print(f"Downloaded {destination_path}")
+
+    except Exception as e:
+        print(f"Error downloading file {file_id} ({file_name}): {e}")
+
 
 def get_alt_text_from_description(description_file):
     """Extracts the first sentence from a description file for alt text and returns the full text."""
