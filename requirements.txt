@@ -16,3 +16,5 @@ google-api-python-client
 requests
 requests-oauthlib
 pytz
+python-docx
+
