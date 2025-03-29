@@ -205,22 +205,33 @@ def get_alt_text_from_description(description_file):
 
 
 def tweet_images_from_folder(folder_path):
-    """Tweets a random image from the specified folder."""
+    """Tweets a random image from the specified folder and replies with the full description."""
     images = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_formats)]
     descriptions = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_text_extensions)]
+    
     if not images or not descriptions:
         print(f"No images or description file found in folder: {folder_path}")
         return False
+    
     selected_image = random.choice(images)
     alt_text, full_text = get_alt_text_from_description(descriptions[0])
+
     try:
         media = api.media_upload(selected_image)
-        api.create_media_metadata(media.media_id, alt_text)  # Correct way to add alt text
-        client_v2.create_tweet(text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊", media_ids=[media.media_id])
-        print(f"Tweeted {alt_text}")
+        api.create_media_metadata(media.media_id, alt_text)  # Add alt text
+        tweet = client_v2.create_tweet(text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊", media_ids=[media.media_id])
+
+        print(f"Tweeted: {alt_text}")
+
+        # Reply with full description
+        if full_text.strip():
+            client_v2.create_tweet(text=full_text, in_reply_to_tweet_id=tweet.data['id'])
+            print("Replied with full description.")
+
     except Exception as e:
         print(f"Error tweeting: {e}")
         return False
+    
     return True
 
 def tweet_random_images():
