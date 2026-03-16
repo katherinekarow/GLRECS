@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.13.2'
 
       # Step 3: Upgrade pip and install dependencies
       - name: Install dependencies
