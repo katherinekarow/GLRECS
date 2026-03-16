@@ -1,7 +1,7 @@
 import os
 import random
 import tweepy
-from time import sleep
+import time
 from datetime import datetime
 import pytz
 import docx
@@ -22,10 +22,10 @@ ACCESS_SECRET = os.getenv('ACCESS_SECRET')
 
 # Debug: Print environment variables
 print("Loaded environment variables:")
-print(f"CONSUMER_KEY: {CONSUMER_KEY}")
-print(f"CONSUMER_SECRET: {CONSUMER_SECRET}")
-print(f"ACCESS_KEY: {ACCESS_KEY}")
-print(f"ACCESS_SECRET: {ACCESS_SECRET}")
+print(f"CONSUMER_KEY: {'***' if CONSUMER_KEY else 'MISSING'}")
+print(f"CONSUMER_SECRET: {'***' if CONSUMER_SECRET else 'MISSING'}")
+print(f"ACCESS_KEY: {'***' if ACCESS_KEY else 'MISSING'}")
+print(f"ACCESS_SECRET: {'***' if ACCESS_SECRET else 'MISSING'}")
 
 # Google Drive configuration
 DRIVE_FOLDER_ID = os.getenv('DRIVE_FOLDER_ID')
@@ -33,7 +33,7 @@ SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # Debug: Print Google Drive configuration
-print(f"DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID}")
+print(f"DRIVE_FOLDER_ID: {'***' if DRIVE_FOLDER_ID else 'MISSING'}")
 print(f"SERVICE_ACCOUNT_FILE: {SERVICE_ACCOUNT_FILE}")
 
 # Initialize Google Drive service
@@ -42,7 +42,7 @@ try:
     drive_service = build('drive', 'v3', credentials=creds)
     print("Google Drive service initialized successfully.")
 except Exception as e:
-    print(f"Error initializing Google Drive service: {e}")
+    print(f"Error initializing Google Drive service: {type(e).__name__}: {e}")
     exit(1)
 
 # Initialize Tweepy (Twitter API)
@@ -58,7 +58,7 @@ try:
     api = tweepy.API(auth)
     print("Twitter API initialized successfully.")
 except Exception as e:
-    print(f"Error initializing Twitter API: {e}")
+    print(f"Error initializing Twitter API: {type(e).__name__}: {e}")
     exit(1)
 
 # Configuration
@@ -76,6 +76,37 @@ supported_text_extensions = (
 )
 miami_tz = pytz.timezone('America/New_York')
 
+def is_transient_error(e):
+    """Returns True for errors that are worth retrying."""
+    msg = str(e)
+    transient_markers = ["429", "500", "502", "503", "504", "Service Unavailable", "Too Many Requests"]
+    return any(marker in msg for marker in transient_markers)
+
+def retry_call(fn, *args, max_retries=3, initial_delay=5, step_name="API call", **kwargs):
+    """Retries transient API failures with exponential backoff."""
+    delay = initial_delay
+    last_exception = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"{step_name}: attempt {attempt}/{max_retries}")
+            result = fn(*args, **kwargs)
+            print(f"{step_name}: success")
+            return result
+        except Exception as e:
+            last_exception = e
+            print(f"{step_name}: failed on attempt {attempt}/{max_retries}")
+            print(f"{step_name}: {type(e).__name__}: {e}")
+
+            if attempt == max_retries or not is_transient_error(e):
+                raise
+
+            print(f"{step_name}: retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= 2
+
+    raise last_exception
+
 def list_drive_folders(parent_id):
     """Lists all subfolders in the given Google Drive folder."""
     query = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
@@ -86,7 +117,7 @@ def list_drive_folders(parent_id):
         results = drive_service.files().list(
             q=query,
             fields="nextPageToken, files(id, name)",
-            pageSize=500,  # Increase page size to retrieve more results per request
+            pageSize=500,
             pageToken=page_token
         ).execute()
 
@@ -94,7 +125,7 @@ def list_drive_folders(parent_id):
         page_token = results.get('nextPageToken')
 
         if not page_token:
-            break  # Exit loop when there are no more pages
+            break
 
     print(f"Found {len(folders)} folders in Drive.")
     return folders
@@ -105,7 +136,11 @@ def list_drive_files(folder_id):
     files = []
     page_token = None
     while True:
-        results = drive_service.files().list(q=query, fields="files(id, name, mimeType)", pageToken=page_token).execute()
+        results = drive_service.files().list(
+            q=query,
+            fields="nextPageToken, files(id, name, mimeType)",
+            pageToken=page_token
+        ).execute()
         files.extend(results.get('files', []))
         page_token = results.get('nextPageToken')
         if not page_token:
@@ -144,30 +179,26 @@ def download_file_from_drive(file_id, destination_path):
         file_mime_type = file_metadata.get('mimeType', '')
         file_name = file_metadata.get('name', '')
 
-        # Define export formats for Google Docs types
         export_mime_types = {
-            'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # Export to .docx
-            'application/vnd.google-apps.spreadsheet': 'text/csv',  # Export to .csv
-            'application/vnd.google-apps.presentation': 'application/pdf',  # Export to .pdf
-            'application/vnd.google-apps.drawing': 'image/png'  # Export to .png
+            'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.google-apps.spreadsheet': 'text/csv',
+            'application/vnd.google-apps.presentation': 'application/pdf',
+            'application/vnd.google-apps.drawing': 'image/png'
         }
 
         if file_mime_type in export_mime_types:
             export_mime = export_mime_types[file_mime_type]
             request = drive_service.files().export_media(fileId=file_id, mimeType=export_mime)
 
-            # Assign correct file extension based on export format
             extension_map = {
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
                 'text/csv': '.csv',
                 'application/pdf': '.pdf',
                 'image/png': '.png'
             }
-            file_extension = extension_map.get(export_mime, '.txt')  # Default to .txt if unknown
+            file_extension = extension_map.get(export_mime, '.txt')
             destination_path = os.path.splitext(destination_path)[0] + file_extension
-
         else:
-            # Normal file download (for .rtf, .txt, .doc, .docx)
             request = drive_service.files().get_media(fileId=file_id)
 
         with io.FileIO(destination_path, 'wb') as fh:
@@ -179,59 +210,88 @@ def download_file_from_drive(file_id, destination_path):
         print(f"Downloaded {destination_path}")
 
     except Exception as e:
-        print(f"Error downloading file {file_id} ({file_name}): {e}")
+        print(f"Error downloading file {file_id} ({file_name}): {type(e).__name__}: {e}")
 
 def get_alt_text_from_description(description_file):
     """Extracts the first sentence from a description file for alt text and returns the full text."""
     try:
-        # Check if the file is a .docx file
         if description_file.lower().endswith('.docx'):
             doc = docx.Document(description_file)
             content = '\n'.join([para.text for para in doc.paragraphs]).strip()
         else:
-            # Handle other text-based files
             with open(description_file, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
 
         if not content:
             return "Sapphic Recommendation", "No description available."
-        
-        # Use the first 100 characters or first sentence as alt text
+
         alt_text = content.split('.')[0] if '.' in content else content[:100]
         return alt_text.strip(), content
     except Exception as e:
-        print(f"Error reading description file {description_file}: {e}")
+        print(f"Error reading description file {description_file}: {type(e).__name__}: {e}")
         return "Sapphic Recommendation", "No description available."
-
 
 def tweet_images_from_folder(folder_path):
     """Tweets a random image from the specified folder and replies with the full description."""
     images = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_formats)]
     descriptions = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_text_extensions)]
-    
+
     if not images or not descriptions:
         print(f"No images or description file found in folder: {folder_path}")
         return False
-    
+
     selected_image = random.choice(images)
     alt_text, full_text = get_alt_text_from_description(descriptions[0])
 
     try:
-        media = api.media_upload(selected_image)
-        api.create_media_metadata(media.media_id, alt_text)  # Add alt text
-        tweet = client_v2.create_tweet(text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊", media_ids=[media.media_id])
+        print(f"Selected image: {selected_image}")
+        print("Uploading media...")
+        media = retry_call(
+            api.media_upload,
+            selected_image,
+            max_retries=3,
+            initial_delay=5,
+            step_name="Media upload"
+        )
+
+        print("Adding alt text...")
+        retry_call(
+            api.create_media_metadata,
+            media.media_id,
+            alt_text,
+            max_retries=3,
+            initial_delay=5,
+            step_name="Media metadata"
+        )
+
+        print("Creating main tweet...")
+        tweet = retry_call(
+            client_v2.create_tweet,
+            text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊",
+            media_ids=[media.media_id],
+            max_retries=3,
+            initial_delay=5,
+            step_name="Create main tweet"
+        )
 
         print(f"Tweeted: {alt_text}")
 
-        # Reply with full description
         if full_text.strip():
-            client_v2.create_tweet(text=full_text, in_reply_to_tweet_id=tweet.data['id'])
+            print("Creating reply tweet...")
+            retry_call(
+                client_v2.create_tweet,
+                text=full_text,
+                in_reply_to_tweet_id=tweet.data['id'],
+                max_retries=3,
+                initial_delay=5,
+                step_name="Create reply tweet"
+            )
             print("Replied with full description.")
 
     except Exception as e:
-        print(f"Error tweeting: {e}")
+        print(f"Error tweeting: {type(e).__name__}: {e}")
         return False
-    
+
     return True
 
 def tweet_random_images():
