@@ -1,12 +1,13 @@
 import os
 import random
-import tweepy
 import time
+import io
 from datetime import datetime
+
+import tweepy
 import pytz
 import docx
 from dotenv import load_dotenv
-import io
 
 # Google API imports
 from googleapiclient.discovery import build
@@ -43,9 +44,9 @@ try:
     print("Google Drive service initialized successfully.")
 except Exception as e:
     print(f"Error initializing Google Drive service: {type(e).__name__}: {e}")
-    exit(1)
+    raise SystemExit(1)
 
-# Initialize Tweepy (Twitter API)
+# Initialize Tweepy (Twitter/X API)
 try:
     client_v2 = tweepy.Client(
         consumer_key=CONSUMER_KEY,
@@ -53,13 +54,15 @@ try:
         access_token=ACCESS_KEY,
         access_token_secret=ACCESS_SECRET
     )
+
     auth = tweepy.OAuth1UserHandler(CONSUMER_KEY, CONSUMER_SECRET)
     auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
-    api = tweepy.API(auth)
-    print("Twitter API initialized successfully.")
+
+    api = tweepy.API(auth, wait_on_rate_limit=True)
+    print("Twitter/X API initialized successfully.")
 except Exception as e:
-    print(f"Error initializing Twitter API: {type(e).__name__}: {e}")
-    exit(1)
+    print(f"Error initializing Twitter/X API: {type(e).__name__}: {e}")
+    raise SystemExit(1)
 
 # Configuration
 local_base_folder = './GLRECS_temp'
@@ -76,14 +79,29 @@ supported_text_extensions = (
 )
 miami_tz = pytz.timezone('America/New_York')
 
+
 def is_transient_error(e):
-    """Returns True for errors that are worth retrying."""
-    msg = str(e)
-    transient_markers = ["429", "500", "502", "503", "504", "Service Unavailable", "Too Many Requests"]
+    """Returns True for errors worth retrying."""
+    msg = str(e).lower()
+    transient_markers = [
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+        "service unavailable",
+        "too many requests",
+        "gateway timeout",
+        "connection reset",
+        "timed out",
+        "temporarily unavailable",
+        "over capacity"
+    ]
     return any(marker in msg for marker in transient_markers)
 
-def retry_call(fn, *args, max_retries=3, initial_delay=5, step_name="API call", **kwargs):
-    """Retries transient API failures with exponential backoff."""
+
+def retry_call(fn, *args, max_retries=5, initial_delay=5, max_delay=90, step_name="API call", **kwargs):
+    """Retries transient API failures with exponential backoff + jitter."""
     delay = initial_delay
     last_exception = None
 
@@ -101,11 +119,46 @@ def retry_call(fn, *args, max_retries=3, initial_delay=5, step_name="API call", 
             if attempt == max_retries or not is_transient_error(e):
                 raise
 
-            print(f"{step_name}: retrying in {delay} seconds...")
-            time.sleep(delay)
-            delay *= 2
+            jitter = random.uniform(0.5, 2.0)
+            sleep_for = min(delay + jitter, max_delay)
+            print(f"{step_name}: retrying in {sleep_for:.1f} seconds...")
+            time.sleep(sleep_for)
+            delay = min(delay * 2, max_delay)
 
     raise last_exception
+
+
+def verify_x_access():
+    """Performs lightweight auth checks for both v1.1 and v2 clients."""
+    try:
+        print("Verifying v1.1 credentials...")
+        user = retry_call(
+            api.verify_credentials,
+            max_retries=3,
+            initial_delay=3,
+            step_name="Verify v1.1 credentials"
+        )
+        if user:
+            print(f"v1.1 auth OK for @{user.screen_name}")
+        else:
+            print("v1.1 auth check returned no user object.")
+
+        print("Verifying v2 user context...")
+        me = retry_call(
+            client_v2.get_me,
+            user_auth=True,
+            max_retries=3,
+            initial_delay=3,
+            step_name="Verify v2 user context"
+        )
+        if me and me.data:
+            print(f"v2 auth OK for user id {me.data.id}")
+        else:
+            print("v2 auth check returned no data.")
+    except Exception as e:
+        print(f"X auth verification failed: {type(e).__name__}: {e}")
+        raise
+
 
 def list_drive_folders(parent_id):
     """Lists all subfolders in the given Google Drive folder."""
@@ -130,11 +183,13 @@ def list_drive_folders(parent_id):
     print(f"Found {len(folders)} folders in Drive.")
     return folders
 
+
 def list_drive_files(folder_id):
     """Lists all files in a given Google Drive folder."""
     query = f"'{folder_id}' in parents and trashed=false"
     files = []
     page_token = None
+
     while True:
         results = drive_service.files().list(
             q=query,
@@ -145,7 +200,9 @@ def list_drive_files(folder_id):
         page_token = results.get('nextPageToken')
         if not page_token:
             break
+
     return files
+
 
 def select_valid_drive_folder(folders):
     """Selects a random folder that contains at least one image and one text file."""
@@ -157,8 +214,10 @@ def select_valid_drive_folder(folders):
         if has_image and has_text:
             print(f"Selected valid folder: {folder['name']}")
             return folder
+
     print("No valid folders found.")
     return None
+
 
 def download_drive_folder(folder_id, destination_folder):
     """Downloads all files in a Google Drive folder to a local folder."""
@@ -171,6 +230,7 @@ def download_drive_folder(folder_id, destination_folder):
         download_file_from_drive(file['id'], file_path)
 
     return destination_folder
+
 
 def download_file_from_drive(file_id, destination_path):
     """Downloads a file from Google Drive, exporting Google Docs files if necessary."""
@@ -212,6 +272,7 @@ def download_file_from_drive(file_id, destination_path):
     except Exception as e:
         print(f"Error downloading file {file_id} ({file_name}): {type(e).__name__}: {e}")
 
+
 def get_alt_text_from_description(description_file):
     """Extracts the first sentence from a description file for alt text and returns the full text."""
     try:
@@ -226,15 +287,77 @@ def get_alt_text_from_description(description_file):
             return "Sapphic Recommendation", "No description available."
 
         alt_text = content.split('.')[0] if '.' in content else content[:100]
-        return alt_text.strip(), content
+        alt_text = alt_text.strip()[:1000]  # Safe cap for alt text
+        return alt_text, content
     except Exception as e:
         print(f"Error reading description file {description_file}: {type(e).__name__}: {e}")
         return "Sapphic Recommendation", "No description available."
 
+
+def wait_for_media_ready(media_id, max_checks=12, initial_delay=2):
+    """
+    Polls media status when available.
+    For simple image uploads this often returns immediately, but this keeps
+    the script safe if X reports processing information.
+    """
+    delay = initial_delay
+
+    for check_num in range(1, max_checks + 1):
+        try:
+            print(f"Check media status: attempt {check_num}/{max_checks}")
+            status = api.get_media_upload_status(media_id)
+            processing_info = getattr(status, "processing_info", None)
+
+            if not processing_info:
+                print("Media status: ready (no processing_info returned)")
+                return True
+
+            state = processing_info.get("state")
+            print(f"Media processing state: {state}")
+
+            if state == "succeeded":
+                print("Media processing complete.")
+                return True
+
+            if state == "failed":
+                error_info = processing_info.get("error", {})
+                raise RuntimeError(f"Media processing failed: {error_info}")
+
+            check_after_secs = processing_info.get("check_after_secs", delay)
+            print(f"Media still processing; waiting {check_after_secs} seconds...")
+            time.sleep(check_after_secs)
+            delay = min(delay * 2, 30)
+
+        except tweepy.TweepyException as e:
+            # For simple image upload, some flows may not expose processing info.
+            # If status lookup itself is transient, retry; otherwise continue.
+            print(f"Media status check issue: {type(e).__name__}: {e}")
+            if is_transient_error(e):
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+
+            print("Proceeding without media status polling.")
+            return True
+        except Exception as e:
+            print(f"Unexpected media status issue: {type(e).__name__}: {e}")
+            raise
+
+    raise TimeoutError("Media was not ready before timeout.")
+
+
 def tweet_images_from_folder(folder_path):
     """Tweets a random image from the specified folder and replies with the full description."""
-    images = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_formats)]
-    descriptions = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith(supported_text_extensions)]
+    images = [
+        os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if f.lower().endswith(supported_formats)
+    ]
+    descriptions = [
+        os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if f.lower().endswith(supported_text_extensions)
+    ]
 
     if not images or not descriptions:
         print(f"No images or description file found in folder: {folder_path}")
@@ -245,45 +368,61 @@ def tweet_images_from_folder(folder_path):
 
     try:
         print(f"Selected image: {selected_image}")
+
         print("Uploading media...")
         media = retry_call(
             api.media_upload,
             selected_image,
-            max_retries=3,
+            media_category="tweet_image",
+            max_retries=5,
             initial_delay=5,
+            max_delay=90,
             step_name="Media upload"
         )
+
+        wait_for_media_ready(media.media_id)
 
         print("Adding alt text...")
         retry_call(
             api.create_media_metadata,
             media.media_id,
             alt_text,
-            max_retries=3,
-            initial_delay=5,
+            max_retries=5,
+            initial_delay=3,
+            max_delay=30,
             step_name="Media metadata"
         )
+
+        print("Waiting briefly after metadata...")
+        time.sleep(2)
 
         print("Creating main tweet...")
         tweet = retry_call(
             client_v2.create_tweet,
             text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊",
             media_ids=[media.media_id],
-            max_retries=3,
-            initial_delay=5,
+            user_auth=True,
+            max_retries=5,
+            initial_delay=8,
+            max_delay=120,
             step_name="Create main tweet"
         )
 
         print(f"Tweeted: {alt_text}")
 
         if full_text.strip():
+            print("Waiting briefly before reply...")
+            time.sleep(2)
+
             print("Creating reply tweet...")
             retry_call(
                 client_v2.create_tweet,
                 text=full_text,
                 in_reply_to_tweet_id=tweet.data['id'],
-                max_retries=3,
-                initial_delay=5,
+                user_auth=True,
+                max_retries=5,
+                initial_delay=8,
+                max_delay=120,
                 step_name="Create reply tweet"
             )
             print("Replied with full description.")
@@ -294,16 +433,30 @@ def tweet_images_from_folder(folder_path):
 
     return True
 
+
 def tweet_random_images():
     """Selects a valid Drive folder and tweets an image."""
     folders = list_drive_folders(DRIVE_FOLDER_ID)
     valid_folder = select_valid_drive_folder(folders)
+
     if valid_folder:
-        local_folder = download_drive_folder(valid_folder['id'], os.path.join(local_base_folder, valid_folder['name']))
-        tweet_images_from_folder(local_folder)
+        local_folder = download_drive_folder(
+            valid_folder['id'],
+            os.path.join(local_base_folder, valid_folder['name'])
+        )
+        return tweet_images_from_folder(local_folder)
+
+    return False
+
 
 def main():
-    tweet_random_images()
+    verify_x_access()
+    success = tweet_random_images()
+    if success:
+        print("Bot execution completed successfully.")
+    else:
+        print("Bot execution completed without posting.")
+
 
 if __name__ == "__main__":
     main()
