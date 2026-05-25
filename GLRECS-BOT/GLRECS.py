@@ -2,6 +2,7 @@ import io
 import json
 import os
 import random
+import re
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -54,6 +55,17 @@ def validate_environment():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         print(f"Service account file not found: {SERVICE_ACCOUNT_FILE}")
         raise SystemExit(1)
+
+
+def normalize_drive_folder_id(value):
+    """Accept either a raw Drive folder ID or a full Drive folder URL."""
+    if not value:
+        return value
+    candidate = value.strip()
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", candidate)
+    if match:
+        return match.group(1)
+    return candidate
 
 
 def ensure_state_dir():
@@ -214,20 +226,78 @@ def verify_x_access(api, client_v2):
             print("v1.1 auth check returned no user object.")
 
         print("Verifying v2 user context...")
-        me = retry_call(
-            client_v2.get_me,
-            user_auth=True,
-            max_retries=3,
-            initial_delay=3,
-            step_name="Verify v2 user context",
-        )
-        if me and me.data:
-            print(f"v2 auth OK for user id {me.data.id}")
-        else:
-            print("v2 auth check returned no data.")
+        try:
+            me = retry_call(
+                client_v2.get_me,
+                user_auth=True,
+                max_retries=3,
+                initial_delay=3,
+                step_name="Verify v2 user context",
+            )
+            if me and me.data:
+                print(f"v2 auth OK for user id {me.data.id}")
+            else:
+                print("v2 auth check returned no data.")
+        except Exception as e:
+            print(f"v2 auth unavailable; will use v1.1 fallback for posting. {type(e).__name__}: {e}")
     except Exception as e:
         print(f"X auth verification failed: {type(e).__name__}: {e}")
         raise
+
+
+def create_main_tweet(api, client_v2, text, media_ids):
+    """Create main tweet, preferring v2 and falling back to v1.1 if needed."""
+    try:
+        tweet = retry_call(
+            client_v2.create_tweet,
+            text=text,
+            media_ids=media_ids,
+            user_auth=True,
+            max_retries=5,
+            initial_delay=8,
+            max_delay=120,
+            step_name="Create main tweet (v2)",
+        )
+        return tweet.data["id"]
+    except Exception as e:
+        print(f"v2 main tweet failed, falling back to v1.1. {type(e).__name__}: {e}")
+        status = retry_call(
+            api.update_status,
+            status=text,
+            media_ids=media_ids,
+            max_retries=5,
+            initial_delay=8,
+            max_delay=120,
+            step_name="Create main tweet (v1.1 fallback)",
+        )
+        return str(status.id)
+
+
+def create_reply_tweet(api, client_v2, text, reply_to_id):
+    """Create reply tweet, preferring v2 and falling back to v1.1 if needed."""
+    try:
+        retry_call(
+            client_v2.create_tweet,
+            text=text,
+            in_reply_to_tweet_id=reply_to_id,
+            user_auth=True,
+            max_retries=5,
+            initial_delay=8,
+            max_delay=120,
+            step_name="Create reply tweet (v2)",
+        )
+    except Exception as e:
+        print(f"v2 reply failed, falling back to v1.1. {type(e).__name__}: {e}")
+        retry_call(
+            api.update_status,
+            status=text,
+            in_reply_to_status_id=reply_to_id,
+            auto_populate_reply_metadata=True,
+            max_retries=5,
+            initial_delay=8,
+            max_delay=120,
+            step_name="Create reply tweet (v1.1 fallback)",
+        )
 
 
 def list_drive_folders(drive_service, parent_id):
@@ -474,31 +544,18 @@ def tweet_image_and_reply(api, client_v2, image_paths, description_path):
 
         time.sleep(2)
 
-        tweet = retry_call(
-            client_v2.create_tweet,
-            text="₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊",
-            media_ids=media_ids,
-            user_auth=True,
-            max_retries=5,
-            initial_delay=8,
-            max_delay=120,
-            step_name="Create main tweet",
+        tweet_id = create_main_tweet(
+            api,
+            client_v2,
+            "₊ ⊹ ❤︎ sapphic recommendations ❤︎ ⊹ ₊",
+            media_ids,
         )
 
         print(f"Tweeted: {alt_text}")
 
         if full_text.strip():
             time.sleep(2)
-            retry_call(
-                client_v2.create_tweet,
-                text=full_text,
-                in_reply_to_tweet_id=tweet.data["id"],
-                user_auth=True,
-                max_retries=5,
-                initial_delay=8,
-                max_delay=120,
-                step_name="Create reply tweet",
-            )
+            create_reply_tweet(api, client_v2, full_text, tweet_id)
             print("Replied with full description.")
 
     except Exception as e:
@@ -550,7 +607,9 @@ def tweet_random_images(drive_service, api, client_v2):
 
 
 def main():
+    global DRIVE_FOLDER_ID
     validate_environment()
+    DRIVE_FOLDER_ID = normalize_drive_folder_id(DRIVE_FOLDER_ID)
     reset_temp_folder(local_base_folder)
     drive_service = build_drive_service()
     api, client_v2 = build_x_clients()
