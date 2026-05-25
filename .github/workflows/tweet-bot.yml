@@ -21,6 +21,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Step 2.5: Restore bot state cache (recommendation history)
+      - name: Restore bot state cache
+        uses: actions/cache@v4
+        with:
+          path: .bot_state
+          key: bot-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            bot-state-${{ runner.os }}-
+
       # Step 3: Upgrade pip and install dependencies
       - name: Install dependencies
         run: |
